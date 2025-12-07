@@ -1,22 +1,32 @@
 #pragma once
-// This header only declares variables that are shared between encoder.cpp and micro_ros_keyboard.cpp
-// The actual definitions are in micro_ros_keyboard.cpp
+// Global variable DEFINITIONS - these create the actual storage
+// Other .hpp files should declare them as extern
 
-// Forward declarations
-namespace espp {
-    class As5600;
-}
+#include <rcl/rcl.h>
+#include <rclc/rclc.h>
+#include <rclc/executor.h>
 
-struct SemaphoreData;  // Forward declare FreeRTOS type
-typedef struct SemaphoreData* SemaphoreHandle_t;
+#include <std_msgs/msg/int8.h>
+#include <std_msgs/msg/float32_multi_array.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
-struct std_msgs__msg__Float32MultiArray;  // Forward declare ROS2 type
+// Define encoder-related global variables
+espp::As5600 *g_as5600_0 = nullptr;
+std_msgs__msg__Float32MultiArray encoder_counts_angel_rpm_msgs = {};
+SemaphoreHandle_t encoder_msg_mutex = NULL;
 
-// Single AS5600 encoder
-extern espp::As5600 *g_as5600_0; // Encoder on I2C_NUM_1
+int8_t motor2_command = 0;
+TickType_t last_command_time_motor2 = 0;
+SemaphoreHandle_t motor_mutex = NULL;
 
-// Mutex for protecting encoder message access
-extern SemaphoreHandle_t encoder_msg_mutex;
+    
+SemaphoreHandle_t microros_network_mutex = NULL;
+rcl_node_t node;
+rclc_executor_t executor;
+rcl_allocator_t allocator;
+rclc_support_t support;
+rcl_publisher_t encoder_counts_pub;
+rcl_subscription_t keyboard_sub_group4;
+std_msgs__msg__Int8 keyboard_msg_group4;
 
-// Encoder message storage
-extern std_msgs__msg__Float32MultiArray encoder_counts_angel_rpm_msgs;

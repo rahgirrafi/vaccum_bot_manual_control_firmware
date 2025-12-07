@@ -7,27 +7,7 @@
 
 static const char *TAG = "MICRO_ROS";
 
-// Define global variables declared in global_declarations.hpp
-espp::As5600 *g_as5600_0 = nullptr;
-SemaphoreHandle_t encoder_msg_mutex = NULL;
-std_msgs__msg__Float32MultiArray encoder_counts_angel_rpm_msgs;
 
-// micro-ROS objects
-rcl_node_t node;
-rclc_executor_t executor;
-rcl_allocator_t allocator;
-rclc_support_t support;
-rcl_publisher_t encoder_counts_pub;
-rcl_publisher_t sensor_publisher;
-std_msgs__msg__Float32MultiArray sensor_msg;
-SemaphoreHandle_t sensor_msg_mutex = NULL;
-
-// Subscriptions and subscription messages
-rcl_subscription_t keyboard_sub_group4;
-std_msgs__msg__Int8 keyboard_msg_group4;
-
-// Mutex for protecting micro-ROS network operations (WiFi/UDP)
-SemaphoreHandle_t microros_network_mutex;
 
 void keyboard_callback_group4(const void *msgin)
 {
@@ -77,12 +57,9 @@ void micro_ros_init(void)
     }
     ESP_LOGI(TAG, "micro-ROS network mutex created");
     
-    // Initialize sensor message mutex
-    sensor_msg_mutex = xSemaphoreCreateMutex();
-    if (sensor_msg_mutex == NULL) {
-        ESP_LOGE(TAG, "Failed to create sensor_msg_mutex");
-        return;
-    }
+
+    std_msgs__msg__Float32MultiArray__init(&encoder_counts_angel_rpm_msgs);
+    std_msgs__msg__Int8__init(&keyboard_msg_group4);
     
     // Initialize encoder message mutex
     encoder_msg_mutex = xSemaphoreCreateMutex();
@@ -96,40 +73,57 @@ void micro_ros_init(void)
     
     // Initialize allocator
     allocator = rcl_get_default_allocator();
-    
-    // Initialize support
     rcl_init_options_t init_options = rcl_get_zero_initialized_init_options();
     RCCHECK(rcl_init_options_init(&init_options, allocator));
     
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
     rmw_init_options_t* rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
     RCCHECK(rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options));
+    ESP_LOGI(TAG, "Connecting to micro-ROS agent at %s:%s", CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT);
 #endif
     
-    RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
+    ESP_LOGI(TAG, "About to initialize support with options...");
+    rcl_ret_t rc = rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator);
     
-    // Initialize node
+    if (rc != RCL_RET_OK) {
+        ESP_LOGE(TAG, "rclc_support_init_with_options failed with code %d", (int)rc);
+        ESP_LOGE(TAG, "Make sure micro-ROS agent is running at %s:%s", CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT);
+        ESP_LOGE(TAG, "Check WiFi connectivity and network configuration");
+        fflush(stdout);
+        vTaskDelete(NULL);
+    }
+    ESP_LOGI(TAG, "Support initialization successful!");
+    
+    // Small delay to let agent settle
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // Initialize node (shortened name to avoid length limits)
     node = rcl_get_zero_initialized_node();
-    RCCHECK(rclc_node_init_default(&node, "keyboard_motor_group4_controller", "", &support));
+    rc = rclc_node_init_default(&node, "right_motor", "", &support);
+    if (rc != RCL_RET_OK) {
+        ESP_LOGE(TAG, "Node initialization failed with code %d - Agent connection issue", (int)rc);
+        return;
+    }
+    ESP_LOGI(TAG, "Node initialized: right_motor");
+    
+    // Small delay before subscription initialization
+    vTaskDelay(pdMS_TO_TICKS(100));
     
     // Initialize subscriber for Group 4
-    RCCHECK(rclc_subscription_init_default(
+    ESP_LOGI(TAG, "Initializing subscription to /keyboard/group4...");
+    keyboard_sub_group4 = rcl_get_zero_initialized_subscription();
+    rc = rclc_subscription_init_default(
         &keyboard_sub_group4,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int8),
         "/keyboard/group4"
-    ));
+    );
+    if (rc != RCL_RET_OK) {
+        ESP_LOGE(TAG, "Subscription initialization failed with code %d", (int)rc);
+        return;
+    }
+    ESP_LOGI(TAG, "Subscription initialized successfully");
     
-    // Initialize AS5600 sensor publisher
-    sensor_publisher = rcl_get_zero_initialized_publisher();
-    RCCHECK(rclc_publisher_init_default(
-        &sensor_publisher,
-        &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
-        "/as5600_sensors_left"
-    ));
-    
-    ESP_LOGI(TAG, "AS5600 sensor publisher initialized on topic: /as5600_sensors_left");
     
     // Initialize encoder publisher
     encoder_counts_pub = rcl_get_zero_initialized_publisher();
@@ -167,96 +161,37 @@ void micro_ros_spin_task(void *arg)
     TickType_t last_wake = xTaskGetTickCount();
     const TickType_t task_period = pdMS_TO_TICKS(100); // 10Hz
     
-    // Allocate memory for sensor message data array
-    // Data format: [motor4_angle_rad, motor4_rpm]
-    sensor_msg.data.capacity = 2;
-    sensor_msg.data.size = 2;
-    sensor_msg.data.data = (float*)malloc(sensor_msg.data.capacity * sizeof(float));
-    
-    if (sensor_msg.data.data == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for sensor message");
-        vTaskDelete(NULL);
-        return;
-    }
-    
     int log_counter = 0;
     
     while (1) {
-        // 1. Handle incoming ROS messages (subscriptions)
-        if (xSemaphoreTake(microros_network_mutex, portMAX_DELAY) == pdTRUE) {
-            rcl_ret_t rc = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(50));
-            xSemaphoreGive(microros_network_mutex);
-            
-            if (rc != RCL_RET_OK) {
-                static uint32_t error_count = 0;
-                error_count++;
-                if (error_count % 10 == 0) {
-                    ESP_LOGW(TAG, "Executor spin failed: %d (error count: %lu)", (int)rc, error_count);
-                }
+        
+        rcl_ret_t rc = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(200));
+        if (rc != RCL_RET_OK) {
+            if (log_counter % 10 == 0) {
+                ESP_LOGW("MICRO_ROS_TASK", "Executor spin failed: %d - Agent may not be available", (int)rc);
             }
-        } else {
-            ESP_LOGW(TAG, "Failed to acquire microros_network_mutex for spin");
+            vTaskDelay(pdMS_TO_TICKS(200));
         }
-        
-        // 2. Read AS5600 sensor
-        float radians_motor2 = 0.0f;
-        float rpm_motor2 = 0.0f;
-        
-        if (g_as5600_0) {
-            radians_motor2 = g_as5600_0->get_radians();
-            rpm_motor2 = g_as5600_0->get_rpm();
-        }
-        
-        // 3. Publish sensor data
-        if (xSemaphoreTake(sensor_msg_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            // Populate message data
-            sensor_msg.data.data[0] = radians_motor2;  // Motor 4 angle in radians
-            sensor_msg.data.data[1] = rpm_motor2;       // Motor 4 RPM
-            xSemaphoreGive(sensor_msg_mutex);
-            
-            // Publish with network mutex protection
-            if (xSemaphoreTake(microros_network_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                rcl_ret_t ret = rcl_publish(&sensor_publisher, &sensor_msg, NULL);
-                xSemaphoreGive(microros_network_mutex);
-                
-                if (ret != RCL_RET_OK && log_counter % 10 == 0) {
-                    ESP_LOGW(TAG, "Failed to publish sensor data: %d", (int)ret);
-                }
-            }
-        }
-        
-        // 4. Publish encoder data from encoder_sample_task
+
         if (xSemaphoreTake(encoder_msg_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            // Publish with network mutex protection
-            if (xSemaphoreTake(microros_network_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 rcl_ret_t ret = rcl_publish(&encoder_counts_pub, &encoder_counts_angel_rpm_msgs, NULL);
-                xSemaphoreGive(microros_network_mutex);
-                
                 if (ret != RCL_RET_OK && log_counter % 10 == 0) {
                     ESP_LOGW(TAG, "Failed to publish encoder data: %d", (int)ret);
                 }
+            if (log_counter % 50 == 0) {
+                ESP_LOGI(TAG, "AS5600 Sensor - Motor1: %.2f rad, %.1f RPM", 
+                        encoder_counts_angel_rpm_msgs.data.data[0],
+                        encoder_counts_angel_rpm_msgs.data.data[1]);
+ 
             }
             xSemaphoreGive(encoder_msg_mutex);
         }
-        
-        // 5. Throttled logging (every 5 seconds)
-        if (log_counter % 50 == 0) {
-            ESP_LOGI(TAG, "AS5600 Sensor - Motor4: %.2f rad, %.1f RPM", 
-                     radians_motor2, rpm_motor2);
-            
-            // Log encoder data too
-            if (xSemaphoreTake(encoder_msg_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                ESP_LOGI(TAG, "Encoder Data - [%.2f, %.1f]",
-                    encoder_counts_angel_rpm_msgs.data.data[0],
-                    encoder_counts_angel_rpm_msgs.data.data[1]);
-                xSemaphoreGive(encoder_msg_mutex);
-            }
+        else {
+            ESP_LOGW(TAG, "Failed to take encoder_msg_mutex in micro_ros_spin_task");
         }
-        
+    
         log_counter++;
         vTaskDelayUntil(&last_wake, task_period);
     }
     
-    // Cleanup (never reached)
-    free(sensor_msg.data.data);
 }

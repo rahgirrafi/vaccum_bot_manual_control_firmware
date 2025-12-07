@@ -1,3 +1,4 @@
+#pragma once
 #ifndef MICRO_ROS_KEYBOARD_HPP
 #define MICRO_ROS_KEYBOARD_HPP
 
@@ -8,7 +9,6 @@
 #include <std_msgs/msg/float32_multi_array.h>
 #include "esp_log.h"
 #include "motor_control.hpp"
-
 
 // Error checking macros
 #define RCCHECK(fn) { \
@@ -26,17 +26,20 @@
   } \
 }
 
-// Global micro-ROS objects
 extern rcl_node_t node;
 extern rclc_executor_t executor;
 extern rcl_allocator_t allocator;
 extern rclc_support_t support;
-extern rcl_subscription_t keyboard_sub_group2;
-extern rcl_subscription_t keyboard_sub_group3;
-extern std_msgs__msg__Int8 keyboard_msg_group2;
-extern std_msgs__msg__Int8 keyboard_msg_group3;
-
+extern rcl_publisher_t encoder_counts_pub;
+extern rcl_subscription_t keyboard_sub_group4;
+extern std_msgs__msg__Int8 keyboard_msg_group4;
 extern SemaphoreHandle_t microros_network_mutex;
+
+
+
+extern  std_msgs__msg__Float32MultiArray encoder_counts_angel_rpm_msgs;
+extern std_msgs__msg__Float32MultiArray encoder_counts_angel_rpm_msgs;
+extern SemaphoreHandle_t encoder_msg_mutex;
 
 // Function declarations
 void micro_ros_init(void);

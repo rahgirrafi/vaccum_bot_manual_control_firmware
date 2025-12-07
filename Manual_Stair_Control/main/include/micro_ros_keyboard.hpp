@@ -5,7 +5,6 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <std_msgs/msg/int8.h>
-#include <std_msgs/msg/float32_multi_array.h>
 #include "esp_log.h"
 #include "motor_control.hpp"
 
