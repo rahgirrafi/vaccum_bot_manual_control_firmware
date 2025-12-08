@@ -43,6 +43,7 @@ extern "C" void app_main(void)
 
     // Initialize motor drivers
     motor_driver_init();
+    encoders_init();
 
     // Initialize micro-ROS
     micro_ros_init();

@@ -67,7 +67,6 @@ void encoders_init(void)
 // Encoder sample & debug task
 void encoder_sample_task(void *arg)
 {
-    encoders_init();
     (void)arg;
     
     // Initialize the Float32MultiArray message
