@@ -28,4 +28,3 @@ extern SemaphoreHandle_t encoder_msg_mutex;
 // Function declarations
 void encoders_init(void);
 void encoder_sample_task(void *arg);
-

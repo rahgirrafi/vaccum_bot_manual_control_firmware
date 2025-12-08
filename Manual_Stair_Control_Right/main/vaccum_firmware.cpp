@@ -13,7 +13,7 @@ Commands: 1 = clockwise, -1 = counter-clockwise, 0 = stop
 #include "motor_control.hpp"
 #include "micro_ros_keyboard.hpp"
 #include "encoder.hpp"
-
+#include "global_declarations.hpp"
 static const char *TAG = "MAIN";
 
 extern "C" void app_main(void)
@@ -49,42 +49,21 @@ extern "C" void app_main(void)
     // Note: AS5600 sensors will be initialized by encoder_sample_task
 
     // Create motor control task
-    BaseType_t task_ret = xTaskCreate(
-        motor_control_task,
-        "motor_control",
-        4096,
-        NULL,
-        2,
-        NULL
-    );
+    BaseType_t task_ret = xTaskCreate(motor_control_task,"motor_control",4096,NULL,1,NULL);
     if (task_ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create motor control task");
         return;
     }
 
     // Create micro-ROS spin task (handles both subscriptions and sensor publishing)
-    task_ret = xTaskCreate(
-        micro_ros_spin_task,
-        "micro_ros_spin",
-        8192,
-        NULL,
-        1,
-        NULL
-    );
+    task_ret = xTaskCreate(micro_ros_spin_task,"micro_ros_spin",8192,NULL,3,NULL);
     if (task_ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create micro-ROS spin task");
         return;
     }
 
     // Create encoder sample task
-    task_ret = xTaskCreate(
-        encoder_sample_task,
-        "encoder_sample",
-        4096,
-        NULL,
-        1,
-        NULL
-    );
+    task_ret = xTaskCreate(encoder_sample_task,"encoder_sample",4096,NULL,2,NULL);
     if (task_ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create encoder sample task");
         return;

@@ -1,3 +1,4 @@
+#pragma once
 #ifndef MOTOR_CONTROL_HPP
 #define MOTOR_CONTROL_HPP
 
@@ -20,10 +21,11 @@
 #define MOTOR2_PWM_FREQ    1000           // 1kHz PWM frequency
 #define MOTOR2_PWM_DUTY    4095           // 12-bit resolution (0-4095)
 
-// Motor control variables
+// Include global declarations for motor-related shared variables
+
 extern int8_t motor2_command;
-extern SemaphoreHandle_t motor_mutex;
 extern TickType_t last_command_time_motor2;
+extern SemaphoreHandle_t motor_mutex;
 
 // Motor timeout configuration
 #define MOTOR_TIMEOUT_MS 500  // 0.5 seconds timeout

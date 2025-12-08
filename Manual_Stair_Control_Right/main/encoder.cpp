@@ -1,8 +1,10 @@
 #include "encoder.hpp"
+#include "as5600.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/i2c.h"
+
 
 
 void encoders_init(void)
@@ -36,6 +38,19 @@ void encoders_init(void)
 
     ESP_LOGI("ENCODER", "AS5600 encoder initialized on I2C bus");
     ESP_LOGI("ENCODER", "  AS5600_0: I2C_NUM_1 (SDA=21, SCL=22)");
+
+     // Initialize encoder message array before creating publisher
+    encoder_counts_angel_rpm_msgs.data.capacity = 2;
+    encoder_counts_angel_rpm_msgs.data.size = 2;
+    encoder_counts_angel_rpm_msgs.data.data = (float*)malloc(2 * sizeof(float));
+    if (encoder_counts_angel_rpm_msgs.data.data == NULL) {
+        ESP_LOGE("ENCODER", "Failed to allocate encoder message array");
+        return;
+    }
+    encoder_counts_angel_rpm_msgs.data.data[0] = 0.0f;
+    encoder_counts_angel_rpm_msgs.data.data[1] = 0.0f;
+    ESP_LOGI("ENCODER", "Encoder message array initialized");
+    
 }
 
 
@@ -46,31 +61,19 @@ void encoder_sample_task(void *arg)
     encoders_init();
     (void)arg;
     
-    // Initialize the Float32MultiArray message
-    encoder_counts_angel_rpm_msgs.data.capacity = 2;
-    encoder_counts_angel_rpm_msgs.data.size = 2;
-    encoder_counts_angel_rpm_msgs.data.data = (float*)malloc(2 * sizeof(float));
-    
-    if (encoder_counts_angel_rpm_msgs.data.data == NULL) {
-        ESP_LOGE("ENCODER_TASK", "Failed to allocate memory for encoder message");
-        vTaskDelete(NULL);
-        return;
-    }
-    
-    // Initialize values to zero
-    for (int i = 0; i < 2; i++) {
-        encoder_counts_angel_rpm_msgs.data.data[i] = 0.0f;
-    }
+    // Note: encoder_counts_angel_rpm_msgs is now initialized in micro_ros_init()
+    // to ensure it's ready before the publisher is created
     
     int log_counter = 0;
     TickType_t last_wake = xTaskGetTickCount();
     const TickType_t sample_period = pdMS_TO_TICKS(100);  // 100ms = 10Hz
     
     ESP_LOGI("ENCODER_TASK", "Encoder sample task started with Float32MultiArray");
-    
+
+    float radians_0 = 0.0f, rpm_0 = 0.0f;
+
     while (1) {
-        // Read from AS5600 on I2C_NUM_1
-        float radians_0 = 0.0f, rpm_0 = 0.0f;
+
         if (g_as5600_0) {
             radians_0 = g_as5600_0->get_radians();
             rpm_0 = g_as5600_0->get_rpm();
@@ -84,14 +87,14 @@ void encoder_sample_task(void *arg)
             
             xSemaphoreGive(encoder_msg_mutex);
         } else {
-            ESP_LOGW("ENCODER_TASK", "Failed to take encoder_msg_mutex");
+            ESP_LOGW("ENCODER_TASK", "Failed to take encoder_msg_mutex in Encoder Sample Task");
         }
             
         // Throttled logging (every 5 seconds at 10Hz)
-        if (log_counter % 50 == 0) {
+        // if (log_counter % 50 == 0) {
             ESP_LOGI("ENCODER", "AS5600 Sensor (Motor 4) - %.2f rad, %.1f RPM", 
                     radians_0, rpm_0);
-        }
+        // }
         
         log_counter++;
         vTaskDelayUntil(&last_wake, sample_period);

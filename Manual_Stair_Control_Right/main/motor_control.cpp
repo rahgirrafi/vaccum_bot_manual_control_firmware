@@ -2,10 +2,7 @@
 
 static const char *TAG = "MOTOR_CONTROL";
 
-// Global variables
-int8_t motor2_command = 0;
-SemaphoreHandle_t motor_mutex;
-TickType_t last_command_time_motor2 = 0;
+
 
 void motor_driver_init(void)
 {

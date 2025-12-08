@@ -5,6 +5,7 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <std_msgs/msg/int8.h>
+#include <std_msgs/msg/float32_multi_array.h>
 #include "esp_log.h"
 #include "motor_control.hpp"
 
@@ -34,6 +35,12 @@ extern rcl_subscription_t keyboard_sub_group2;
 extern rcl_subscription_t keyboard_sub_group3;
 extern std_msgs__msg__Int8 keyboard_msg_group2;
 extern std_msgs__msg__Int8 keyboard_msg_group3;
+
+// Publishers
+extern rcl_publisher_t encoder_counts_pub;
+extern rcl_publisher_t sensor_publisher;
+extern std_msgs__msg__Float32MultiArray sensor_msg;
+extern SemaphoreHandle_t sensor_msg_mutex;
 
 extern SemaphoreHandle_t microros_network_mutex;
 
